@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Betting Tracker (Final Clean)</title>
+<style>
+body { font-family: Arial; margin:0; background:#0f172a; color:#fff; }
+header { background:#1e293b; padding:15px; text-align:center; font-size:20px; }
+nav { display:flex; justify-content:center; gap:20px; background:#020617; padding:10px; }
+nav button { background:#334155; color:#fff; border:none; padding:10px 15px; cursor:pointer; }
+.container { padding:20px; }
+.card { background:#1e293b; padding:20px; border-radius:10px; margin-bottom:20px; }
+input, select, button { padding:10px; margin:5px; border-radius:5px; border:none; }
+button.action { background:#22c55e; color:white; cursor:pointer; }
+canvas { background:#fff; border-radius:10px; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<header>
+Total: ₹<span id="totalEarnings">0</span> |
+Toss: ₹<span id="tossTotal">0</span> |
+Match: ₹<span id="matchTotal">0</span>
+</header>
+
+<nav>
+<button onclick="showPage('dashboard')">Dashboard</button>
+<button onclick="showPage('tables')">Tables</button>
+<button onclick="showPage('analytics')">Graphs</button>
+</nav>
+
+<div class="container">
+
+<div id="dashboard">
+<div class="card">
+<h3>Bet Entry</h3>
+<select id="type">
+<option value="toss">Toss</option>
+<option value="match">Match</option>
+</select>
+<input type="number" id="stake" placeholder="Stake">
+<input type="number" id="odds" placeholder="Odds (0 = loss)">
+<label>
+<input type="checkbox" id="autoDelete" checked> Auto Delete (47 days)
+</label>
+<button class="action" onclick="calculate()">Add Bet</button>
+<p id="result"></p>
+</div>
+
+<div class="card">
+<h3>Recovery Guide</h3>
+<p id="guide"></p>
+</div>
+</div>
+
+<div id="tables" style="display:none">
+<div class="card">
+<h3>Toss Table</h3>
+<table id="tossTable" border="1" width="100%"></table>
+</div>
+<div class="card">
+<h3>Match Table</h3>
+<table id="matchTable" border="1" width="100%"></table>
+</div>
+</div>
+
+<div id="analytics" style="display:none">
+<div class="card">
+<h3>Toss Graph</h3>
+<canvas id="tossChart" width="600" height="300"></canvas>
+</div>
+<div class="card">
+<h3>Match Graph</h3>
+<canvas id="matchChart" width="600" height="300"></canvas>
+</div>
+</div>
+
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem('betData')) || [];
+let targetPerDay = 30;
+let maxDays = 47;
+
+function save(){ localStorage.setItem('betData', JSON.stringify(data)); }
+
+function showPage(p){
+ document.getElementById('dashboard').style.display=p==='dashboard'?'block':'none';
+ document.getElementById('tables').style.display=p==='tables'?'block':'none';
+ document.getElementById('analytics').style.display=p==='analytics'?'block':'none';
+}
+
+function calculate(){
+ const type = document.getElementById('type').value;
+ const stake = parseFloat(document.getElementById('stake').value);
+ const odds = parseFloat(document.getElementById('odds').value);
+
+ if(!stake || stake <= 0){
+   document.getElementById('result').innerText = "Enter valid stake";
+   return;
+ }
+
+ if(isNaN(odds)){
+   document.getElementById('result').innerText = "Enter odds";
+   return;
+ }
+
+ if(odds < 0){
+   document.getElementById('result').innerText = "Negative odds not allowed";
+   return;
+ }
+
+ let profit = (odds === 0) ? -stake : (stake * odds) - stake;
+
+ data.push({profit, type});
+
+ if(document.getElementById('autoDelete').checked && data.length > maxDays){
+   data.shift();
+ }
+
+ save();
+ render();
+
+ document.getElementById('result').innerText =
+   `${type.toUpperCase()} Profit: ₹${profit.toFixed(2)} (Odds: ${odds})`;
+}
+
+function render(){
+ let total=0, toss=0, match=0, balance=0;
+
+ let tossTable = document.getElementById('tossTable');
+ let matchTable = document.getElementById('matchTable');
+
+ tossTable.innerHTML="<tr><th>Day</th><th>Profit</th><th>Action</th></tr>";
+ matchTable.innerHTML="<tr><th>Day</th><th>Profit</th><th>Action</th></tr>";
+
+ let tossData=[], matchData=[];
+
+ data.forEach((d,i)=>{
+ total+=d.profit;
+ balance+=(targetPerDay-d.profit);
+
+ if(d.type==='toss'){
+ toss+=d.profit;
+ tossData.push(d.profit);
+ let r=tossTable.insertRow();
+ r.innerHTML=`<td>${i+1}</td><td>${d.profit.toFixed(2)}</td><td><button onclick="deleteDay(${i})">Delete</button></td>`;
+ } else {
+ match+=d.profit;
+ matchData.push(d.profit);
+ let r=matchTable.insertRow();
+ r.innerHTML=`<td>${i+1}</td><td>${d.profit.toFixed(2)}</td><td><button onclick="deleteDay(${i})">Delete</button></td>`;
+ }
+ });
+
+ document.getElementById('totalEarnings').innerText=total.toFixed(2);
+ document.getElementById('tossTotal').innerText=toss.toFixed(2);
+ document.getElementById('matchTotal').innerText=match.toFixed(2);
+
+ recoveryGuide(balance);
+ drawGraph('tossChart', tossData);
+ drawGraph('matchChart', matchData);
+}
+
+function recoveryGuide(balance){
+ if(balance<=0){ document.getElementById('guide').innerText="You are ahead"; return; }
+ let needed = balance + targetPerDay;
+ let stakeNeeded = needed / 0.95;
+ document.getElementById('guide').innerText = `Suggested stake (~1.95 odds): ₹${Math.round(stakeNeeded)}`;
+}
+
+function drawGraph(id, arr){
+ let ctx=document.getElementById(id).getContext('2d');
+ ctx.clearRect(0,0,600,300);
+ let x=10,total=0;
+ ctx.beginPath();
+ arr.forEach(v=>{
+ total+=v;
+ let y=300-total;
+ ctx.lineTo(x,y);
+ x+=15;
+ });
+ ctx.stroke();
+}
+
+function deleteDay(index){
+ data.splice(index,1);
+ save();
+ render();
+}
+
+window.onload=render;
+</script>
+
+</body>
+</html>
